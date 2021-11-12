@@ -44,6 +44,7 @@ try:
 except:
   print("error trying to set local to {}".format(config.LOCALE))
 
+AUTO_ORIENT = False
 EXIF_DATID = None # this needs to be set before get_files() above can extract exif date info
 EXIF_ORIENTATION = None
 #####################################################
@@ -103,111 +104,6 @@ def orientate_image(im, orientation):
     elif orientation == 8:
         im = im.transpose(Image.ROTATE_90)
     return im
-
-def tex_load(pic_num, iFiles, size=None):
-  global date_from, date_to, next_pic_num
-  if type(pic_num) is int:
-    #fname = iFiles[pic_num][0]
-    #orientation = iFiles[pic_num][1]
-    fname = iFiles[pic_num].fname
-    orientation = iFiles[pic_num].orientation
-    if iFiles[pic_num].shown_with is not None:
-      return None # this image already show this round so skip
-  else: # allow file name to be passed to this function ie for missing file image
-    fname = pic_num
-    orientation = 1
-  try:
-    ext = os.path.splitext(fname)[1].lower()
-    if ext in ('.heif','.heic'):
-      im = convert_heif(fname)
-    else:
-      im = Image.open(fname)
-    if config.DELAY_EXIF and type(pic_num) is int: # don't do this if passed a file name
-      if iFiles[pic_num].dt is None or iFiles[pic_num].fdt is None: # dt and fdt set to None before exif read
-        (orientation, dt, fdt, location, aspect) = get_exif_info(fname, im)
-        iFiles[pic_num].orientation = orientation
-        iFiles[pic_num].dt = dt
-        iFiles[pic_num].fdt = fdt
-        iFiles[pic_num].location = location
-        iFiles[pic_num].aspect = aspect
-
-      if date_from is not None:
-        if dt < time.mktime(date_from + (0, 0, 0, 0, 0, 0)):
-          return None
-      if date_to is not None:
-        if dt > time.mktime(date_to + (0, 0, 0, 0, 0, 0)):
-          return None
-
-    # If PORTRAIT_PAIRS active and this is a portrait pic, try to find another one to pair it with
-    if config.PORTRAIT_PAIRS and iFiles[pic_num].aspect < 1.0:
-      im2 = None
-      # Search the whole list for another portrait image, starting with the "next"
-      # assuming previous images in sequence have already been shown
-      # TODO poss very time consuming to call get_exif_info
-      # TODO back and next will bring up different image combinations, or maybe just fail
-      if pic_num < len(iFiles) - 1: # i.e can't do this on the last image in list
-        for f_rec in iFiles[pic_num + 1:]:
-          if f_rec.dt is None or f_rec.fdt is None: # dt and fdt set to None before exif read
-            (f_orientation, f_dt, f_fdt, f_location, f_aspect) = get_exif_info(f_rec.fname)
-            f_rec.orientation = f_orientation
-            f_rec.dt = f_dt
-            f_rec.fdt = f_fdt
-            f_rec.location = f_location
-            f_rec.aspect = f_aspect
-          if f_rec.aspect < 1.0 and f_rec.shown_with is None:
-            im2 = Image.open(f_rec.fname)
-            f_rec.shown_with = pic_num
-            break
-      if im2 is not None:
-        if orientation > 1:
-          im = orientate_image(im, orientation)
-        if f_rec.orientation > 1:
-          im2 = orientate_image(im2, f_rec.orientation)
-        im = create_image_pair(im, im2)
-        orientation = 1
-
-    (w, h) = im.size
-    max_dimension = MAX_SIZE # TODO changing MAX_SIZE causes serious crash on linux laptop!
-    if not config.AUTO_RESIZE: # turned off for 4K display - will cause issues on RPi before v4
-        max_dimension = 3840 # TODO check if mipmapping should be turned off with this setting.
-    if w > max_dimension:
-        im = im.resize((max_dimension, int(h * max_dimension / w)), resample=Image.BICUBIC)
-    elif h > max_dimension:
-        im = im.resize((int(w * max_dimension / h), max_dimension), resample=Image.BICUBIC)
-    if orientation > 1:
-        im = orientate_image(im, orientation)
-    if config.BLUR_EDGES and size is not None:
-      wh_rat = (size[0] * im.height) / (size[1] * im.width)
-      if abs(wh_rat - 1.0) > 0.01: # make a blurred background
-        (sc_b, sc_f) = (size[1] / im.height, size[0] / im.width)
-        if wh_rat > 1.0:
-          (sc_b, sc_f) = (sc_f, sc_b) # swap round
-        (w, h) =  (round(size[0] / sc_b / config.BLUR_ZOOM), round(size[1] / sc_b / config.BLUR_ZOOM))
-        (x, y) = (round(0.5 * (im.width - w)), round(0.5 * (im.height - h)))
-        box = (x, y, x + w, y + h)
-        blr_sz = (int(x * 512 / size[0]) for x in size)
-        im_b = im.resize(size, resample=0, box=box).resize(blr_sz)
-        im_b = im_b.filter(ImageFilter.GaussianBlur(config.BLUR_AMOUNT))
-        im_b = im_b.resize(size, resample=Image.BICUBIC)
-        im_b.putalpha(round(255 * config.EDGE_ALPHA))  # to apply the same EDGE_ALPHA as the no blur method.
-        im = im.resize((int(x * sc_f) for x in im.size), resample=Image.BICUBIC)
-        """resize can use Image.LANCZOS (alias for Image.ANTIALIAS) for resampling
-        for better rendering of high-contranst diagonal lines. NB downscaled large
-        images are rescaled near the start of this try block if w or h > max_dimension
-        so those lines might need changing too.
-        """
-        im_b.paste(im, box=(round(0.5 * (im_b.width - im.width)),
-                            round(0.5 * (im_b.height - im.height))))
-        im = im_b # have to do this as paste applies in place
-    tex = pi3d.Texture(im, blend=True, m_repeat=True, automatic_resize=config.AUTO_RESIZE,
-                        free_after_load=True)
-    #tex = pi3d.Texture(im, blend=True, m_repeat=True, automatic_resize=config.AUTO_RESIZE,
-    #                    mipmap=config.AUTO_RESIZE, free_after_load=True) # poss try this if still some artifacts with full resolution
-  except Exception as e:
-    if config.VERBOSE:
-        print('''Couldn't load file {} giving error: {}'''.format(fname, e))
-    tex = None
-  return (tex, im)
 
 def background_texture(display):
   mat_texture = Image.open('./mat_texture.jpg').convert("L")
@@ -329,7 +225,7 @@ def tex_load(matter, pic_num, iFiles, size=None):
     #fname = iFiles[pic_num][0]
     #orientation = iFiles[pic_num][1]
     fname = iFiles[pic_num].fname
-    orientation = iFiles[pic_num].orientation
+    orientation = iFiles[pic_num].orientation if AUTO_ORIENT else 1
     if iFiles[pic_num].shown_with is not None:
       return None # this image already show this round so skip
   else: # allow file name to be passed to this function ie for missing file image
