@@ -26,6 +26,8 @@ TRANSITION_SPEED = 0.5
 IMAGE_MAX_HEIGHT = 650
 IMAGE_MAX_WIDTH = 900
 
+RANDOMIZE_SIZES = True
+
 photos = []
 backgrounds = []
 
@@ -41,10 +43,10 @@ def last_photo():
   return None
 
 def randomize (ratio):
-  return ratio * random.randrange(70, 110, 30) / 100
+  if not RANDOMIZE_SIZES:
+    return 0.9
 
-def randomize (ration):
-  return 0.9
+  return ratio * random.randrange(70, 110, 30) / 100
 
 def revised_sizes (img):
   w = img.width
