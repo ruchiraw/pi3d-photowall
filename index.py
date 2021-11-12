@@ -46,7 +46,7 @@ def randomize (ratio):
   if not RANDOMIZE_SIZES:
     return 0.9
 
-  return ratio * random.randrange(70, 110, 30) / 100
+  return random.randrange(80, 100, 10) / 100
 
 def revised_sizes (img):
   w = img.width
