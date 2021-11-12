@@ -1,0 +1,10 @@
+[Unit]
+Description=Photowall on Pi3
+
+[Service]
+ExecStart=/usr/bin/python3 /home/pi/photowall/start.py
+WorkingDirectory=/home/pi/photowall
+#Restart=always
+
+[Install]
+WantedBy=default.target
