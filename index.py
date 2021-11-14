@@ -4,11 +4,13 @@ Simple Sprite objects fall across the screen and are moved back to the top once
 they hit the bottom edge.
 """
 
-import random, time, threading, math
+import random, time, threading, math, datetime
+import subprocess
 
 import pi3d
 
 from six_mod.moves import queue
+from gpiozero import MotionSensor
 
 import PhotoUtils
 
@@ -17,6 +19,8 @@ DISPLAY = pi3d.Display.create(background=BACKGROUND, frames_per_second=60)
 CAMERA = pi3d.Camera((0, 0, 0), (0, 0, -1), (1, 1000, 45.0, DISPLAY.width/DISPLAY.height), is_3d=False)
 SHADER = pi3d.Shader('uv_flat')
 # KEYBOARD = pi3d.Keyboard()
+
+pir = MotionSensor(4)
 
 PRELOAD_IMAGE_COUNT = 4
 
@@ -28,6 +32,11 @@ IMAGE_MAX_WIDTH = 900
 
 RANDOMIZE_SIZES = True
 
+PAUSE_WHEN_UNWATCHED = True
+MIN_DURATION_WITHOUT_MOTION = 15 * 60
+
+displayOn = True
+
 photos = []
 backgrounds = []
 
@@ -35,6 +44,8 @@ fileQ = queue.Queue()
 
 nextPhotoIndex = 0
 fileNames, numFiles = PhotoUtils.get_files(None, None)
+
+lastMotionAt = datetime.datetime.now().timestamp()
 
 def last_photo():
   if (len(photos) > 0):
@@ -154,7 +165,44 @@ def handle_keyboard_events():
       DISPLAY.stop()
       return True
 
+def turn_display_off():
+  global displayOn
+
+  if not displayOn:
+    return
+
+  # print('turn off display')
+  subprocess.call('vcgencmd display_power 0', shell=True)
+  displayOn = False
+
+def turn_display_on():
+  global displayOn
+
+  if displayOn:
+    return
+
+  # print('turn on display')
+  subprocess.call('vcgencmd display_power 1', shell=True)
+  displayOn = True
+
+def is_unwatched():
+  if not PAUSE_WHEN_UNWATCHED:
+    return False
+  
+  return datetime.datetime.now().timestamp() - lastMotionAt > MIN_DURATION_WITHOUT_MOTION
+
 def display_images():
+  global lastMotionAt
+  
+  if pir.motion_detected:
+    lastMotionAt = datetime.datetime.now().timestamp()
+
+  if is_unwatched():
+    turn_display_off()
+    return time.sleep(10)
+
+  turn_display_on()
+
   background_requeue = []
 
   for background in backgrounds:
